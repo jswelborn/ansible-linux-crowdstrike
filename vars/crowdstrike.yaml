@@ -1,0 +1,7 @@
+---
+crowdstrike_package_url: "https://hts.jfrog.io/artifactory/hts-packages/"
+crowdstrike_version: "7.20.0-17306"
+os_package_name: "crowdstrike"
+crowdstrike_cid: ""
+crowdstrike_local_mode: false
+crowdstrike_linux_install_path: "/tmp"
