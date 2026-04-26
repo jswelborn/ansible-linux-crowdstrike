@@ -5,7 +5,19 @@
   vars_files:
     - vars/crowdstrike.yaml
 
+  pre_tasks:
+
+    - name: Validate CrowdStrike CID is provided
+      ansible.builtin.assert:
+        that:
+          - crowdstrike_cid is defined
+          - crowdstrike_cid | length > 0
+        fail_msg: "crowdstrike_cid must be provided by AAP credential unless crowdstrike_local_mode is true."
+      when: not crowdstrike_local_mode
+      no_log: true
+
   tasks:
+
     - name: Gather installed package facts
       ansible.builtin.package_facts:
         manager: auto
@@ -84,9 +96,13 @@
         - start service
 
   handlers:
+
     - name: link agent
       ansible.builtin.command: "/opt/CrowdStrike/falconctl -fs --cid={{ crowdstrike_cid }}"
-      when: not crowdstrike_local_mode
+      when:
+        - not crowdstrike_local_mode
+        - crowdstrike_cid is defined
+        - crowdstrike_cid | length > 0
       no_log: true
 
     - name: start service
