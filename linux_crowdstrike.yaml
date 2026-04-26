@@ -1,0 +1,96 @@
+---
+- name: Install CrowdStrike on Linux
+  hosts: all
+  become: true
+  vars_files:
+    - vars/crowdstrike.yaml
+
+  tasks:
+    - name: Gather installed package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Check whether CrowdStrike is already installed
+      ansible.builtin.set_fact:
+        crowdstrike_installed: >-
+          {{
+            'falcon-sensor' in ansible_facts.packages or
+            'CrowdStrike Device Control' in ansible_facts.packages or
+            'CrowdStrike Firmware Analysis' in ansible_facts.packages or
+            'CrowdStrike Sensor Platform' in ansible_facts.packages
+          }}
+
+    - name: Stop play if CrowdStrike already installed
+      ansible.builtin.meta: end_play
+      when: crowdstrike_installed
+
+    - name: Determine package suffix
+      ansible.builtin.set_fact:
+        os_package_suffix: >-
+          {%- if ansible_distribution == 'Ubuntu' -%}
+          _{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.deb
+          {%- elif ansible_distribution == 'Amazon' -%}
+          .amzn{{ ansible_distribution_major_version }}.{{ ansible_architecture }}.rpm
+          {%- elif ansible_os_family == 'RedHat' -%}
+          .el{{ ansible_distribution_major_version }}.{{ ansible_architecture }}.rpm
+          {%- else -%}
+          unsupported
+          {%- endif -%}
+
+    - name: Fail if unsupported platform
+      ansible.builtin.fail:
+        msg: "Unsupported platform: {{ ansible_distribution }} / {{ ansible_os_family }}"
+      when: os_package_suffix == "unsupported"
+
+    - name: Build package filename
+      ansible.builtin.set_fact:
+        os_package_filename: >-
+          falcon-sensor{{ '_' if ansible_distribution == 'Ubuntu' else '-' }}{{ crowdstrike_version }}{{ os_package_suffix }}
+
+    - name: Set local package path
+      ansible.builtin.set_fact:
+        os_package_local_path: "{{ crowdstrike_linux_install_path }}/{{ os_package_filename }}"
+
+    - name: Download CrowdStrike package
+      ansible.builtin.get_url:
+        url: "{{ crowdstrike_package_url }}{{ os_package_filename }}"
+        dest: "{{ os_package_local_path }}"
+        mode: "0644"
+
+    - name: Install dependency on Ubuntu
+      ansible.builtin.apt:
+        name: libnl-genl-3-200
+        state: present
+        update_cache: true
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Install CrowdStrike on Ubuntu
+      ansible.builtin.apt:
+        deb: "{{ os_package_local_path }}"
+        state: present
+      when: ansible_distribution == "Ubuntu"
+      notify:
+        - link agent
+        - start service
+
+    - name: Install CrowdStrike on RHEL/Amazon
+      ansible.builtin.dnf:
+        name: "{{ os_package_local_path }}"
+        state: present
+        disable_gpg_check: true
+      when: ansible_distribution != "Ubuntu"
+      notify:
+        - link agent
+        - start service
+
+  handlers:
+    - name: link agent
+      ansible.builtin.command: "/opt/CrowdStrike/falconctl -fs --cid={{ crowdstrike_cid }}"
+      when: not crowdstrike_local_mode
+      no_log: true
+
+    - name: start service
+      ansible.builtin.service:
+        name: falcon-sensor
+        state: started
+      when: not crowdstrike_local_mode
