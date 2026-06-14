@@ -1,0 +1,21 @@
+---
+- name: Check CrowdStrike Falcon service
+  hosts: all
+  gather_facts: false
+
+  vars:
+    service_name: falcon-sensor.service
+
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Fail if CrowdStrike Falcon service is missing
+      ansible.builtin.fail:
+        msg: "CrowdStrike Falcon service is missing"
+      when: service_name not in ansible_facts.services
+
+    - name: Fail if CrowdStrike Falcon service is not running
+      ansible.builtin.fail:
+        msg: "CrowdStrike Falcon service exists but is not running"
+      when: ansible_facts.services[service_name].state != "running"
